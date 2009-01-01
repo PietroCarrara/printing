@@ -2,27 +2,58 @@ function main() {
   var doc = Document.openDocument(scriptArgs[0]);
 
   for (var i = 0; i < doc.countPages(); i++) {
-    var page = doc.loadPage(4);
-    var processor = new Processor(doc);
+    var page = doc.loadPage(i);
+    var processor = new Processor(doc, {
+      pageIndex: i,
+      page: page,
+    });
     page.process(processor);
-    // TODO: Update page contents. For now, all the pages that
-    // we process are just a "/Form Do", so no need to worry
   }
+  // TODO: Update page contents. For now, all the pages that
+  // we process are just a "/Form Do", so no need to worry
 
   doc.save(scriptArgs[1]);
 }
 
-function Processor(document) {
+function Processor(document, opts) {
+  opts = opts || {};
+
   return {
     document: document,
     resources: [],
+    level: opts.level || 0,
+    page: opts.page || null,
+    pageIndex: opts.pageIndex || null,
     output: new Buffer(),
     ctm: mupdf.Matrix.identity,
+    graphicsState: [],
     op_Do_form: function (name, xobj) {
-      var subprocess = new Processor(this.document);
+      this.output.writeLine("/" + name + " Do");
+
+      // "Remove boundaries" from XObject
+      // var bbox = xobj.get("BBox");
+      // if (true) {
+      //   xobj.put("BBox", [-800, -800, 800, 800]);
+      //   // xobj.put("BBox", this.page.getObject().get("MediaBox"));
+      // }
+
+      // var matrix = xobj.get("Matrix");
+      // if (matrix) {
+      //   xobj.put("Matrix", mupdf.Matrix.identity);
+      //   var prepend = new Buffer();
+      //   var contents = xobj.readStream();
+      //   prepend.writeLine(asArray(matrix).join(" ") + " cm"); // Apply matrix "by hand"
+      //   prepend.writeBuffer(contents);
+      //   xobj.writeStream(prepend);
+      // }
+
+      var subprocess = new Processor(this.document, {
+        level: this.level + 1,
+        page: this.page,
+        pageIndex: this.pageIndex,
+      });
       xobj.process(subprocess, this.document);
       xobj.writeStream(subprocess.output);
-      this.output.writeLine("/" + name + " Do");
     },
     push_resources: function (xobject) {
       this.resources.push(xobject);
@@ -36,7 +67,7 @@ function Processor(document) {
       this.output.writeLine(linewidth + " w");
     },
     op_j: function (linejoin) {
-      this.output.writeLine(linewidth + " j");
+      this.output.writeLine(linejoin + " j");
     },
     op_J: function (linecap) {
       this.output.writeLine(linecap + " J");
@@ -58,12 +89,15 @@ function Processor(document) {
     },
     op_q: function () {
       this.output.writeLine("q");
+      this.graphicsState.push(this.ctm);
     },
     op_Q: function () {
       this.output.writeLine("Q");
+      this.ctm = this.graphicsState.pop();
     },
     op_cm: function (a, b, c, d, e, f) {
       this.output.writeLine([a, b, c, d, e, f].join(" ") + " " + "cm");
+      this.ctm = Matrix.concat([a, b, c, d, e, f], this.ctm);
     },
     op_m: function (x, y) {
       this.output.writeLine(x + " " + y + " " + " m");
@@ -147,7 +181,7 @@ function Processor(document) {
       this.output.writeLine(render + " Tr");
     },
     op_Ts: function (rise) {
-      print("warn: unimplemented 'op_Ts' called!");
+      this.output.writeLine(rise + "Ts");
     },
     op_Td: function (tx, ty) {
       this.output.writeLine(tx + " " + ty + " Td");
@@ -202,11 +236,11 @@ function Processor(document) {
     },
     op_SC_pattern: function (name, patId, colors) {
       // TODO: pdf_obj instead of patId!
-      print("warn: unimplemented 'op_SC_pattern' called!");
+      this.output.writeLine(colors.join(" ") + "/" + name + " SCN");
     },
     op_sc_pattern: function (name, patId, colors) {
       // TODO: pdf_obj instead of patId!
-      print("warn: unimplemented 'op_sc_pattern' called!");
+      this.output.writeLine(colors.join(" ") + "/" + name + " scn");
     },
     op_SC_shade: function (name, shade) {
       print("warn: unimplemented 'op_SC_shade' called!");
@@ -215,6 +249,7 @@ function Processor(document) {
       print("warn: unimplemented 'op_sc_shade' called!");
     },
     op_SC_color: function (colors) {
+      // TODO: should this really be SCN?
       var output = this.output;
       colors.forEach(function (color) {
         output.write(" " + color);
@@ -229,16 +264,16 @@ function Processor(document) {
       this.output.writeLine(" scn");
     },
     op_G: function (g) {
-      print("warn: unimplemented 'op_G' called!");
+      this.output.writeLine(g + " G");
     },
     op_g: function (g) {
-      print("warn: unimplemented 'op_g' called!");
+      this.output.writeLine(g + " g");
     },
     op_RG: function (r, g, b) {
-      print("warn: unimplemented 'op_RG' called!");
+      this.output.writeLine([r, g, b].join(" ") + " RG");
     },
     op_rg: function (r, g, b) {
-      print("warn: unimplemented 'op_rg' called!");
+      this.output.writeLine([r, g, b].join(" ") + " rg");
     },
     op_K: function (c, m, y, k) {
       print("warn: unimplemented 'op_K' called!");
@@ -254,6 +289,17 @@ function Processor(document) {
       print("warn: unimplemented 'op_sh' called!");
     },
     op_Do_image: function (name, image) {
+      // Draw a red square below images
+      // this.output.writeLine("q");
+      // this.output.writeLine("1 0 0 RG");
+      // this.output.writeLine("0 0 m");
+      // this.output.writeLine("-0.1 -0.1 1.1 1.1 re");
+      // this.output.writeLine("h");
+      // this.output.writeLine("S");
+      // this.output.writeLine("Q");
+
+      // print(image.getXResolution()); // Segfault?
+
       this.output.writeLine("/" + name + " Do");
     },
     op_MP: function (tag) {
@@ -297,6 +343,14 @@ function byteString(strOrArray) {
   }
 
   return buffer;
+}
+
+function asArray(pdfArray) {
+  var array = [];
+  pdfArray.forEach(function (value) {
+    array.push(value);
+  });
+  return array;
 }
 
 function escapePdfString(str) {
