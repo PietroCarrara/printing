@@ -1,14 +1,26 @@
+var globalImage = null;
+
 function main() {
   var doc = Document.openDocument(scriptArgs[0]);
 
-  for (var i = 0; i < doc.countPages(); i++) {
-    var page = doc.loadPage(i);
-    var processor = new Processor(doc, {
-      pageIndex: i,
-      page: page,
-    });
-    page.process(processor);
-  }
+  var page = doc.loadPage(2);
+  var processor = new Processor(doc, {
+    pageIndex: 2,
+    page: page,
+  });
+  page.process(processor);
+
+  page.getObject().get("Resources").get("XObject").put("Im0", globalImage);
+  var buf = new Buffer();
+  buf.writeLine("q 700 0 0 700 0 0 cm /Im0 Do Q");
+  pdfObjPrint(globalImage);
+  var content = doc.addStream(buf);
+  var contents = asArray(page.getObject().get("Contents"));
+  contents.unshift(content);
+  page.getObject().put("Contents", contents);
+
+  // for (var i = 0; i < doc.countPages(); i++) {
+  // }
   // TODO: Update page contents. For now, all the pages that
   // we process are just a "/Form Do", so no need to worry
 
@@ -29,23 +41,6 @@ function Processor(document, opts) {
     graphicsState: [],
     op_Do_form: function (name, xobj) {
       this.output.writeLine("/" + name + " Do");
-
-      // "Remove boundaries" from XObject
-      // var bbox = xobj.get("BBox");
-      // if (true) {
-      //   xobj.put("BBox", [-800, -800, 800, 800]);
-      //   // xobj.put("BBox", this.page.getObject().get("MediaBox"));
-      // }
-
-      // var matrix = xobj.get("Matrix");
-      // if (matrix) {
-      //   xobj.put("Matrix", mupdf.Matrix.identity);
-      //   var prepend = new Buffer();
-      //   var contents = xobj.readStream();
-      //   prepend.writeLine(asArray(matrix).join(" ") + " cm"); // Apply matrix "by hand"
-      //   prepend.writeBuffer(contents);
-      //   xobj.writeStream(prepend);
-      // }
 
       var subprocess = new Processor(this.document, {
         level: this.level + 1,
@@ -289,17 +284,9 @@ function Processor(document, opts) {
       print("warn: unimplemented 'op_sh' called!");
     },
     op_Do_image: function (name, image) {
-      // Draw a red square below images
-      // this.output.writeLine("q");
-      // this.output.writeLine("1 0 0 RG");
-      // this.output.writeLine("0 0 m");
-      // this.output.writeLine("-0.1 -0.1 1.1 1.1 re");
-      // this.output.writeLine("h");
-      // this.output.writeLine("S");
-      // this.output.writeLine("Q");
-
       // print(image.getXResolution()); // Segfault?
 
+      globalImage = this.resources[0].get("XObject").get(name);
       this.output.writeLine("/" + name + " Do");
     },
     op_MP: function (tag) {
