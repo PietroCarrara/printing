@@ -37,6 +37,7 @@ def main():
                     cm2point(rect_bottom),
                 ),
                 color=color,
+                width=2,
             )
 
         i = 1 if not args["start_left"] else 2
@@ -79,16 +80,16 @@ def document_size(doc: pymupdf.Document):
     for page in doc:
         if width is None:
             width = page.bound().width
-        elif width != page.bound().width and not args["ignore_size_errors"]:
+        elif width != page.bound().width:
             raise Exception(
-                f"found pages with both width {width} and {page.bound().width}. Please, make your PDF uniform or use --ignore-size-error"
+                f"found pages with both width {width} and {page.bound().width}. Please, use pdf-resize"
             )
 
         if height is None:
             height = page.bound().height
-        elif height != page.bound().height and not args["ignore_size_errors"]:
+        elif height != page.bound().height:
             raise Exception(
-                f"found pages with both height {height} and {page.bound().height}. Please, make your PDF uniform or use --ignore-size-error"
+                f"found pages with both height {height} and {page.bound().height}. Please, use pdf-resize"
             )
 
     if width is None or height is None:
@@ -112,11 +113,6 @@ def cli_args():
         choices=["14x21", "15x21"],
         required=True,
         help="The page size you wish to print this to",
-    )
-    cli.add_argument(
-        "--ignore-size-errors",
-        action="store_true",
-        help="Should the script continue operating even when not all PDF pages have the same size?",
     )
     cli.add_argument(
         "--start-left",
