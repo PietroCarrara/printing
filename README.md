@@ -3,6 +3,7 @@
 ## Useful Commands
 
 - `gs -sDEVICE=pdfwrite -dNOPAUSE -dBATCH -dSAFER -dCompatibilityLevel=1.3 -sOutputFile=output.pdf input.pdf`: Downgrade a PDF to version 1.3. Useful for compatibility.
+- `echo "" | ps2pdf -sPAPERSIZE=a5 - blank.pdf`: Generate a PDF with a single blank page
 
 ## Useful Links
 
