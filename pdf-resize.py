@@ -45,8 +45,8 @@ def main():
 
 def cli_args():
     cli = argparse.ArgumentParser(
-        prog="page-report",
-        description="Print a report on page sizes of a PDF",
+        prog="pdf-resize",
+        description="Resize all pages of a PDF to match a given size",
     )
     cli.add_argument(
         "input-file.pdf",
