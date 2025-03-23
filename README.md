@@ -7,3 +7,9 @@
 ## Useful Links
 
 - **[sejda.com](https://www.sejda.com)**: Useful PDF tools. Freemium.
+
+## TODOs:
+
+### Scaling and Full-Page Images
+
+Scaling the contents of a book to fit them inside the safety margins of the printer will cause images that previously touched the borders of the page to not do so anymore. This is currently fixed by hand, via importing the PDF on Scribus and editing each offender. Maybe this could be scripted, even if using the Scribus python API.
