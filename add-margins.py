@@ -10,31 +10,35 @@ def main():
     global args
     args = cli_args()
 
+    margins = get_margins(args["size"])
     with pymupdf.open(args["input-file.pdf"]) as doc:
         (width, height) = document_size(doc)
-        margins = get_margins(args["size"])
-        offset_width = (margins["page_size"][0] - width) / 2
-        offset_height = (margins["page_size"][1] - height) / 2
-
-        print(f"pdf is {width}cm x {height}cm")
+        if (
+            abs(margins["size_with_bleed"][0] - width) >= 0.1
+            or abs(margins["size_with_bleed"][1] - height) >= 0.1
+        ):
+            print(
+                f"Expected a {margins["size_with_bleed"][0]}x{margins["size_with_bleed"][1]}cm document, got a {width:.2f}x{height:.2f}cm instead"
+            )
+            return 1
 
         def draw_margin(margin: str, page: pymupdf.Page, color):
-            rect_left = margins[margin][0] - offset_width
-            rect_top = margins[margin][1] - offset_height
-            rect_right = margins["page_size"][0] - margins[margin][2] - offset_width
-            rect_bottom = margins["page_size"][1] - margins[margin][3] - offset_height
+            rect_left = page.bound().tl.x + cm2point(margins[margin][0])
+            rect_top = page.bound().tl.y + cm2point(margins[margin][1])
+            rect_right = page.bound().br.x - cm2point(margins[margin][2])
+            rect_bottom = page.bound().br.y - cm2point(margins[margin][3])
 
-            # even pages mean left
+            # Pages reverse inner/outer border for left pages
             if i % 2 == 0:
-                rect_left = margins[margin][2] - offset_width
-                rect_right = margins["page_size"][0] - margins[margin][0] - offset_width
+                rect_left = page.bound().tl.x + cm2point(margins[margin][2])
+                rect_right = page.bound().br.x - cm2point(margins[margin][0])
 
             page.draw_rect(
                 pymupdf.Rect(
-                    cm2point(rect_left),
-                    cm2point(rect_top),
-                    cm2point(rect_right),
-                    cm2point(rect_bottom),
+                    rect_left,
+                    rect_top,
+                    rect_right,
+                    rect_bottom,
                 ),
                 color=color,
                 width=2,
@@ -42,8 +46,10 @@ def main():
 
         i = 1 if not args["start_left"] else 2
         for page in doc:
-            draw_margin("safety", page, (1, 0, 0))
-            draw_margin("cut", page, (0, 1, 0))
+            red = (1, 0, 0)
+            green = (0, 1, 0)
+            draw_margin("safety", page, red)
+            draw_margin("cut", page, green)
             i += 1
 
         doc.save(args["output-file.pdf"])
@@ -57,17 +63,15 @@ def get_margins(size: str):
     match size:
         case "15x21":
             return {
-                "page_size": (15, 21),
-                "cut": (0, 0, 0, 0),
-                "bleed": (-0.25, -0.25, -0.25, -0.25),  # Bleed goes out of the page
-                "safety": (1.5, 0.5, 0.5, 0.5),
+                "size_with_bleed": (15.25, 21.5),
+                "cut": (0, 0.25, 0.25, 0.25),
+                "safety": (1.5, 0.75, 0.75, 0.75),
             }
         case "14x21":
             return {
-                "page_size": (14, 21),
-                "cut": (0, 0, 0, 0),
-                "bleed": (-0.25, -0.25, -0.25, -0.25),  # Bleed goes out of the page
-                "safety": (1.5, 0.5, 0.5, 0.5),
+                "size_with_bleed": (14.25, 21.5),
+                "cut": (0, 0.25, 0.25, 0.25),
+                "safety": (1.5, 0.75, 0.75, 0.75),
             }
 
     raise Exception(f"unknown page size {size}")
