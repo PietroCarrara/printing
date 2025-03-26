@@ -63,15 +63,15 @@ def get_margins(size: str):
     match size:
         case "15x21":
             return {
-                "size_with_bleed": (15.25, 21.5),
-                "cut": (0, 0.25, 0.25, 0.25),
-                "safety": (1.5, 0.75, 0.75, 0.75),
+                "size_with_bleed": (15.5, 21.5),
+                "cut": (0.25, 0.25, 0.25, 0.25),
+                "safety": (1.45, 0.75, 0.75, 0.75),
             }
         case "14x21":
             return {
-                "size_with_bleed": (14.25, 21.5),
-                "cut": (0, 0.25, 0.25, 0.25),
-                "safety": (1.5, 0.75, 0.75, 0.75),
+                "size_with_bleed": (14.5, 21.5),
+                "cut": (0.25, 0.25, 0.25, 0.25),
+                "safety": (1.45, 0.75, 0.75, 0.75),
             }
 
     raise Exception(f"unknown page size {size}")
