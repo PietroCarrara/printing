@@ -1,11 +1,16 @@
 import argparse
 from functools import reduce
 import sys
+import traceback
+from typing import Union
 
-import pymupdf
 import pikepdf
 
 global args
+
+PDFInstructionList = list[
+    Union[pikepdf.ContentStreamInstruction, pikepdf.ContentStreamInlineImage]
+]
 
 
 def main():
@@ -13,13 +18,27 @@ def main():
 
     with pikepdf.Pdf.open(args["input-file.pdf"]) as doc:
         for page in doc.pages:
-            result = hightlight_images(page)
+            result = walk_content_objects(doc, page, on_image=highlight_images)
             page.Contents = doc.make_stream(pikepdf.unparse_content_stream(result))
 
         doc.save(args["output-file.pdf"])
 
 
-def hightlight_images(page_or_stream: pikepdf.Object | pikepdf.Page):
+def no_transform(
+    doc: pikepdf.Pdf,
+    page_or_stream: pikepdf.Object | pikepdf.Page,
+    instructions: PDFInstructionList,
+    ctm: pikepdf.Matrix,
+    text_matrix: pikepdf.Matrix,
+) -> PDFInstructionList:
+    return instructions
+
+
+def walk_content_objects(
+    doc: pikepdf.Pdf,
+    page_or_stream: pikepdf.Object | pikepdf.Page,
+    on_image=no_transform,
+):
     contents = pikepdf.parse_content_stream(page_or_stream)
 
     ctm = pikepdf.Matrix()  # current transformation matrix
@@ -28,7 +47,7 @@ def hightlight_images(page_or_stream: pikepdf.Object | pikepdf.Page):
     result = []
 
     for operands, command in contents:
-        result.append([operands, command])
+        instructions = [(operands, command)]
 
         if command == pikepdf.Operator("Tm"):
             text_matrix = pikepdf.Matrix(operands)
@@ -39,90 +58,93 @@ def hightlight_images(page_or_stream: pikepdf.Object | pikepdf.Page):
         elif command == pikepdf.Operator("Q"):
             ctm = stack.pop()
         elif command == pikepdf.Operator("Do"):
-            # Before current item
-            result.insert(-1, ([], pikepdf.Operator("q")))
-            result.insert(
-                -1,
-                (
-                    pikepdf.Matrix().scaled(1 / (ctm.a or 1), 1 / (ctm.d or 1))
-                    # .translated(cm2point(-1), cm2point(-1))
-                    .scaled(ctm.a, ctm.d).as_array(),
-                    pikepdf.Operator("cm"),
-                ),
-            )
+            try:
+                xobject = page_or_stream.resources.get("/XObject").get(operands[0])
+                match xobject.get("/Subtype"):
+                    case "/Image":
+                        instructions = on_image(
+                            doc,
+                            page_or_stream,
+                            instructions.copy(),
+                            ctm,
+                            text_matrix,
+                        )
+                    case "/Form":
+                        new_instructions = walk_content_objects(
+                            doc, xobject, on_image=on_image
+                        )
+                        new_stream = doc.make_stream(
+                            pikepdf.unparse_content_stream(new_instructions),
+                            xobject.stream_dict,
+                        )
+                        page_or_stream.get("/Resources").get("/XObject")[
+                            operands[0]
+                        ] = new_stream
+            except Exception as e:
+                print(repr(e), file=sys.stderr)
+                print(traceback.format_exc(), file=sys.stderr)
 
-            # Current item goes here
-
-            # After current item, draw a red rectangle
-            width = 4
-            result.append(([], pikepdf.Operator("q")))
-            # Scale back to user coordinates
-            result.append(
-                (
-                    pikepdf.Matrix()
-                    .scaled(1 / (ctm.a or 1), 1 / (ctm.d or 1))
-                    .as_array(),
-                    pikepdf.Operator("cm"),
-                ),
-            )
-            # Line width
-            result.append(([width], pikepdf.Operator("w")))
-            # Red
-            result.append(([1, 0, 0], pikepdf.Operator("RG")))
-            # Rectangle
-            result.append(
-                (
-                    [
-                        width / 2,
-                        width / 2,
-                        ctm.a - width / 2,
-                        ctm.d - width / 2,
-                    ],
-                    pikepdf.Operator("re"),
-                )
-            )
-            # Stroke
-            result.append(([], pikepdf.Operator("S")))
-
-            # Draw resource name
-            result.append(([], pikepdf.Operator("BT")))  # Begin text
-            result.append(([0, 1, 0], pikepdf.Operator("rg")))  # Begin text
-            result.append(
-                (
-                    [
-                        pikepdf.Name(
-                            next(
-                                iter(
-                                    (
-                                        page_or_stream.resources.get("/Font")
-                                        or {"/null": ""}
-                                    ).keys()
-                                )
-                            )
-                        ),
-                        32,
-                    ],
-                    pikepdf.Operator("Tf"),  # Text font
-                )
-            )
-            result.append(
-                (
-                    pikepdf.Matrix().as_array(),
-                    pikepdf.Operator("Tm"),
-                )
-            )
-            print(
-                operands[0],
-                # page_or_stream.resources.get("/XObject").get(operands[0]),
-                # .get("/Subtype"),  # Form XObjects are recursive PDFs!
-            )
-            result.append(([pikepdf.String(str(operands[0]))], pikepdf.Operator("Tj")))
-            result.append(([], pikepdf.Operator("ET")))  # End Text
-
-            result.append(([], pikepdf.Operator("Q")))
-            result.append(([], pikepdf.Operator("Q")))
+        result.extend(instructions)
 
     return result
+
+
+def highlight_images(
+    doc: pikepdf.Pdf,
+    page_or_stream: pikepdf.Object | pikepdf.Page,
+    instructions: PDFInstructionList,
+    ctm: pikepdf.Matrix,
+    text_matrix: pikepdf.Matrix,
+) -> PDFInstructionList:
+    operands, command = instructions[0]
+
+    # Before current item
+    instructions.insert(-1, ([], pikepdf.Operator("q")))
+    instructions.insert(
+        -1,
+        (
+            pikepdf.Matrix().scaled(1 / (ctm.a or 1), 1 / (ctm.d or 1))
+            # .translated(cm2point(-1), cm2point(-1))
+            .scaled(ctm.a, ctm.d).as_array(),
+            pikepdf.Operator("cm"),
+        ),
+    )
+
+    # Current item goes here
+
+    # After current item, draw a red rectangle
+    width = 4
+    instructions.append(([], pikepdf.Operator("q")))
+    # Scale back to user coordinates
+    instructions.append(
+        (
+            pikepdf.Matrix().scaled(1 / (ctm.a or 1), 1 / (ctm.d or 1)).as_array(),
+            pikepdf.Operator("cm"),
+        ),
+    )
+    # Line width
+    instructions.append(([width], pikepdf.Operator("w")))
+    # Red
+    instructions.append(([1, 0, 0], pikepdf.Operator("RG")))
+    # Rectangle
+    instructions.append(
+        (
+            [
+                width / 2,
+                width / 2,
+                ctm.a - width / 2,
+                ctm.d - width / 2,
+            ],
+            pikepdf.Operator("re"),
+        )
+    )
+    # Stroke
+    instructions.append(([], pikepdf.Operator("S")))
+
+    instructions.append(([], pikepdf.Operator("Q")))
+    instructions.append(([], pikepdf.Operator("Q")))
+
+    return instructions
 
 
 def cm2point(cm: float | int):
