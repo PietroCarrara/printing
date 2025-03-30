@@ -60,21 +60,33 @@ def get_margins(size: str):
     # All units are given in cm
     # Margins are in the format: margin inner, margin top, margin outer, margin bottom
 
+    global args
+
+    if not args["cover"]:
+        match size:
+            case "15x21":
+                return {
+                    "size_with_bleed": (15.5, 21.5),
+                    "cut": (0.25, 0.25, 0.25, 0.25),
+                    "safety": (1.45, 0.75, 0.75, 0.75),
+                }
+            case "14x21":
+                return {
+                    "size_with_bleed": (14.5, 21.5),
+                    "cut": (0.25, 0.25, 0.25, 0.25),
+                    "safety": (1.45, 0.75, 0.75, 0.75),
+                }
+        raise Exception(f"unknown page size {size}")
+
+    spine_size = args["spine_size"] / 10  # mm to cm
     match size:
         case "15x21":
             return {
-                "size_with_bleed": (15.5, 21.5),
-                "cut": (0.25, 0.25, 0.25, 0.25),
-                "safety": (1.45, 0.75, 0.75, 0.75),
+                "size_with_bleed": (15 * 2 + 2 * 2 + spine_size, 25),
+                "cut": (2, 2, 2, 2),
+                "safety": (2.5, 2.5, 2.5, 2.5),
             }
-        case "14x21":
-            return {
-                "size_with_bleed": (14.5, 21.5),
-                "cut": (0.25, 0.25, 0.25, 0.25),
-                "safety": (1.45, 0.75, 0.75, 0.75),
-            }
-
-    raise Exception(f"unknown page size {size}")
+    raise Exception(f"unknown cover page size {size}")
 
 
 def document_size(doc: pymupdf.Document):
@@ -122,6 +134,19 @@ def cli_args():
         "--start-left",
         action="store_true",
         help="Is the first page in the PDF the left page?",
+    )
+    cli.add_argument(
+        "--cover",
+        action="store_true",
+        help="Is this PDF a cover?",
+    )
+    cli.add_argument(
+        "--hard",
+        action="store_true",
+        help="Is PDF cover a hard one?",
+    )
+    cli.add_argument(
+        "--spine-size", type=float, help="The book spine width, im mm.", default=0
     )
     return vars(
         cli.parse_args(sys.argv[1:])  # 1: skips the script name included in argv
