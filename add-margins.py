@@ -48,8 +48,11 @@ def main():
         for page in doc:
             red = (1, 0, 0)
             green = (0, 1, 0)
+            orange = (1, 0.25, 0)
             draw_margin("safety", page, red)
             draw_margin("cut", page, green)
+            if "spine" in margins:
+                draw_margin("spine", page, orange)
             i += 1
 
         doc.save(args["output-file.pdf"])
@@ -85,6 +88,7 @@ def get_margins(size: str):
                 "size_with_bleed": (15 * 2 + 2 * 2 + spine_size, 25),
                 "cut": (2, 2, 2, 2),
                 "safety": (2.5, 2.5, 2.5, 2.5),
+                "spine": (15 + 2, 0, 15 + 2, 0),
             }
     raise Exception(f"unknown cover page size {size}")
 
