@@ -8,6 +8,7 @@
 ## Useful Links
 
 - **[sejda.com](https://www.sejda.com)**: Useful PDF tools. Freemium.
+- **[convertio.co](https://convertio.co)**: Convert CFF fonts to TTF. Freemium.
 
 ## TODOs:
 
