@@ -2,6 +2,7 @@ with import <nixpkgs> { };
 
 mkShell {
   packages = [
+    poppler-utils
     pdftk
     ghostscript_headless
     (mupdf.overrideAttrs (old: {
