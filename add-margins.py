@@ -18,7 +18,7 @@ def main():
             or abs(margins["size_with_bleed"][1] - height) >= 0.1
         ):
             print(
-                f"Expected a {margins["size_with_bleed"][0]}x{margins["size_with_bleed"][1]}cm document, got a {width:.2f}x{height:.2f}cm instead"
+                f"Expected a {margins["size_with_bleed"][0]}x{margins["size_with_bleed"][1]}cm document, got a {width:.2f}x{height:.2f}cm instead. Do you need --spine?"
             )
             return 1
 
@@ -82,15 +82,21 @@ def get_margins(size: str):
         raise Exception(f"unknown page size {size}")
 
     spine_size = args["spine_size"] / 10  # mm to cm
-    match size:
-        case "15x21":
-            return {
-                "size_with_bleed": (15 * 2 + 2 * 2 + spine_size, 25),
-                "cut": (2, 2, 2, 2),
-                "safety": (2.5, 2.5, 2.5, 2.5),
-                "spine": (15 + 2, 0, 15 + 2, 0),
-            }
-    raise Exception(f"unknown cover page size {size}")
+
+    # hard cover
+    if args["hard"]:
+        match size:
+            case "15x21":
+                return {
+                    "size_with_bleed": (15 * 2 + 2 * 2 + spine_size, 25),
+                    "cut": (2, 2, 2, 2),
+                    "safety": (2.5, 2.5, 2.5, 2.5),
+                    "spine": (15 + 2, 0, 15 + 2, 0),
+                }
+
+    raise Exception(
+        f"unknown cover page size {size}. Do you need to use/drop --cover or --hard?"
+    )
 
 
 def document_size(doc: pymupdf.Document):
