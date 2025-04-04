@@ -92,38 +92,98 @@ function printImages(doc, page, pageIndex, state) {
 
 function shiftImages(doc, page, pageIndex, state, args) {
   var images = [];
+  var imageCount = 0;
   var processor = new Processor(doc, {
     pageIndex: pageIndex,
     page: page,
     onImage: function (name, image, processor) {
       var absoluteCtm = processor.absoluteCtm[processor.absoluteCtm.length - 1];
 
-      // TODO: Check if key is in selected pages.
-
-      processor.output.writeLine("/" + name + " Do");
-      images.push({
-        name: name,
-        imageRef: processor.resources[0].get("XObject").get(name),
-        width: absoluteCtm[0],
-        height: absoluteCtm[3],
+      var key = "#" + (pageIndex + 1) + ".im" + imageCount;
+      var keyInArray = args.selectedImages.some(function (x) {
+        return key === x;
       });
+      if (keyInArray) {
+        images.push({
+          name: name,
+          imageRef: processor.resources[0].get("XObject").get(name),
+          width: absoluteCtm[0],
+          height: absoluteCtm[3],
+          x: absoluteCtm[4],
+          y: absoluteCtm[5],
+        });
+      } else {
+        processor.output.writeLine("/" + name + " Do");
+      }
+
+      imageCount++;
     },
   });
   page.process(processor);
 
-  if (images.length >= 1) {
-    var image = images[0];
-    page.getObject().get("Resources").get("XObject").put("Im0", image.imageRef);
+  var buf = new Buffer();
+  for (var i in images) {
+    var image = images[i];
 
-    var buf = new Buffer();
-    buf.writeLine(
-      "q " + image.width + " 0 0 " + image.height + " 0 0 cm /Im0 Do Q"
+    page
+      .getObject()
+      .get("Resources")
+      .get("XObject")
+      .put("Im" + i, image.imageRef);
+
+    var ctm = transformImageSnapPage(
+      page,
+      image.x,
+      image.y,
+      image.width,
+      image.height
     );
-    var content = doc.addStream(buf);
-    var contents = asArray(page.getObject().get("Contents"));
-    contents.unshift(content);
-    page.getObject().put("Contents", contents);
+
+    buf.writeLine("q");
+    buf.writeLine(
+      ctm
+        .map(function (x) {
+          return x.toFixed(3);
+        })
+        .join(" ") + " cm"
+    );
+    buf.writeLine("/Im" + i + " Do");
+    buf.writeLine("Q");
   }
+  var content = doc.addStream(buf);
+  var contents = asArray(page.getObject().get("Contents"));
+  contents.unshift(content);
+  page.getObject().put("Contents", contents);
+}
+
+function transformImageSnapPage(page, x, y, w, h) {
+  var rect = page.getBounds();
+  var pageWidth = Math.abs(rect[0] - rect[2]);
+  var pageHeight = Math.abs(rect[1] - rect[3]);
+
+  var scaleX = pageWidth / w;
+  var scaleY = pageHeight / h;
+
+  // TODO: Decide based on how close are the nearby edges
+  var edgesToTouch = 3;
+
+  var scale = 1;
+  switch (edgesToTouch) {
+    case 3:
+      scale = Math.min(scaleX, scaleY); // Fit to page
+      break;
+    case 4:
+      scale = Math.max(scaleX, scaleY); // Fill whole page
+  }
+
+  var finalW = w * scale;
+  var finalH = h * scale;
+
+  // How much I need to increase in this axis to make a border snap
+  var distX = -x;
+  var distY = pageHeight - finalH - y;
+
+  return [finalW, 0, 0, finalH, x + distX, y + distY];
 }
 
 function Processor(document, opts) {
