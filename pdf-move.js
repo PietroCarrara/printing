@@ -2,35 +2,135 @@ var globalImage = null;
 
 function main() {
   var doc = Document.openDocument(scriptArgs[0]);
+  var state = {};
 
-  var page = doc.loadPage(2);
+  for (var i = 0; i < doc.countPages(); i++) {
+    var page = doc.loadPage(i);
+
+    // Choose an operation (CLI is too hard. Easier to do it with by editing the source):
+    // printImages(doc, page, i, state);
+    shiftImages(doc, page, i, state, {
+      selectedImages: ["#3.im0", "#4.im0", "#5.im0", "#19.im0"],
+    });
+  }
+
+  doc.save(scriptArgs[1]);
+}
+
+function printImages(doc, page, pageIndex, state) {
+  state.colorIndex = state.colorIndex || 0;
+
+  var colors = [
+    [[0.5, 0, 0], "maroon"],
+    [[0.5, 0, 0.5], "purple"],
+    [[0, 0.5, 0], "green"],
+    [[0.5, 0.5, 0], "olive"],
+    [[0, 0, 0.5], "navy"],
+    [[0, 0.5, 0.5], "teal"],
+    [[1, 0, 0], "red"],
+    [[1, 0, 1], "fuchsia"],
+    [[0, 1, 0], "lime"],
+    [[1, 1, 0], "yellow"],
+    [[0, 0, 1], "blue"],
+    [[0, 1, 1], "aqua"],
+  ];
+  var images = [];
   var processor = new Processor(doc, {
-    pageIndex: 2,
+    pageIndex: pageIndex,
     page: page,
+    onImage: function (name, image, processor) {
+      var absoluteCtm = processor.absoluteCtm[processor.absoluteCtm.length - 1];
+
+      processor.output.writeLine("/" + name + " Do");
+      images.push({
+        name: name,
+        imageRef: processor.resources[0].get("XObject").get(name),
+        width: absoluteCtm[0],
+        height: absoluteCtm[3],
+        x: absoluteCtm[4],
+        y: absoluteCtm[5],
+        color: colors[state.colorIndex % colors.length],
+      });
+
+      state.colorIndex = (state.colorIndex + 1) % colors.length;
+    },
   });
   page.process(processor);
 
-  page.getObject().get("Resources").get("XObject").put("Im0", globalImage);
   var buf = new Buffer();
-  buf.writeLine("q 700 0 0 700 0 0 cm /Im0 Do Q");
-  pdfObjPrint(globalImage);
+  print("#" + (pageIndex + 1) + " {");
+  for (var i in images) {
+    var image = images[i];
+
+    buf.writeLine("q");
+    buf.writeLine("4 w");
+    buf.writeLine(image.color[0].join(" ") + " RG");
+    buf.writeLine(
+      [image.x, image.y, image.width, image.height].join(" ") + " re"
+    );
+    buf.writeLine("S");
+    buf.writeLine("Q");
+
+    print(
+      "  .im" +
+        i +
+        " { color: " +
+        image.color[1] +
+        "; } /* " +
+        image.width.toFixed(1) +
+        " x " +
+        image.height.toFixed(1) +
+        " */"
+    );
+  }
+  print("}\n");
   var content = doc.addStream(buf);
   var contents = asArray(page.getObject().get("Contents"));
   contents.unshift(content);
   page.getObject().put("Contents", contents);
+}
 
-  // for (var i = 0; i < doc.countPages(); i++) {
-  // }
-  // TODO: Update page contents. For now, all the pages that
-  // we process are just a "/Form Do", so no need to worry
+function shiftImages(doc, page, pageIndex, state, args) {
+  var images = [];
+  var processor = new Processor(doc, {
+    pageIndex: pageIndex,
+    page: page,
+    onImage: function (name, image, processor) {
+      var absoluteCtm = processor.absoluteCtm[processor.absoluteCtm.length - 1];
 
-  doc.save(scriptArgs[1]);
+      // TODO: Check if key is in selected pages.
+
+      processor.output.writeLine("/" + name + " Do");
+      images.push({
+        name: name,
+        imageRef: processor.resources[0].get("XObject").get(name),
+        width: absoluteCtm[0],
+        height: absoluteCtm[3],
+      });
+    },
+  });
+  page.process(processor);
+
+  if (images.length >= 1) {
+    var image = images[0];
+    page.getObject().get("Resources").get("XObject").put("Im0", image.imageRef);
+
+    var buf = new Buffer();
+    buf.writeLine(
+      "q " + image.width + " 0 0 " + image.height + " 0 0 cm /Im0 Do Q"
+    );
+    var content = doc.addStream(buf);
+    var contents = asArray(page.getObject().get("Contents"));
+    contents.unshift(content);
+    page.getObject().put("Contents", contents);
+  }
 }
 
 function Processor(document, opts) {
   opts = opts || {};
 
   return {
+    onImage: opts.onImage,
     document: document,
     resources: [],
     level: opts.level || 0,
@@ -38,17 +138,34 @@ function Processor(document, opts) {
     pageIndex: opts.pageIndex || null,
     output: new Buffer(),
     ctm: mupdf.Matrix.identity,
+    absoluteCtm: opts.absoluteCtm || [mupdf.Matrix.identity],
     graphicsState: [],
     op_Do_form: function (name, xobj) {
       this.output.writeLine("/" + name + " Do");
+
+      var transform = xobj.get("Matrix");
+      if (transform) {
+        this.absoluteCtm.push(
+          Matrix.concat(
+            transform,
+            this.absoluteCtm[this.absoluteCtm.length - 1]
+          )
+        );
+      }
 
       var subprocess = new Processor(this.document, {
         level: this.level + 1,
         page: this.page,
         pageIndex: this.pageIndex,
+        onImage: this.onImage,
+        absoluteCtm: this.absoluteCtm,
       });
       xobj.process(subprocess, this.document);
       xobj.writeStream(subprocess.output);
+
+      if (transform) {
+        this.absoluteCtm.pop();
+      }
     },
     push_resources: function (xobject) {
       this.resources.push(xobject);
@@ -85,14 +202,20 @@ function Processor(document, opts) {
     op_q: function () {
       this.output.writeLine("q");
       this.graphicsState.push(this.ctm);
+      this.absoluteCtm.push(this.absoluteCtm[this.absoluteCtm.length - 1]);
     },
     op_Q: function () {
       this.output.writeLine("Q");
       this.ctm = this.graphicsState.pop();
+      this.absoluteCtm.pop();
     },
     op_cm: function (a, b, c, d, e, f) {
       this.output.writeLine([a, b, c, d, e, f].join(" ") + " " + "cm");
       this.ctm = Matrix.concat([a, b, c, d, e, f], this.ctm);
+      this.absoluteCtm[this.absoluteCtm.length - 1] = Matrix.concat(
+        [a, b, c, d, e, f],
+        this.absoluteCtm[this.absoluteCtm.length - 1]
+      );
     },
     op_m: function (x, y) {
       this.output.writeLine(x + " " + y + " " + " m");
@@ -284,10 +407,11 @@ function Processor(document, opts) {
       print("warn: unimplemented 'op_sh' called!");
     },
     op_Do_image: function (name, image) {
-      // print(image.getXResolution()); // Segfault?
-
-      globalImage = this.resources[0].get("XObject").get(name);
-      this.output.writeLine("/" + name + " Do");
+      if (this.onImage) {
+        this.onImage(name, image, this);
+      } else {
+        this.output.writeLine("/" + name + " Do");
+      }
     },
     op_MP: function (tag) {
       print("warn: unimplemented 'op_MP' called!");
